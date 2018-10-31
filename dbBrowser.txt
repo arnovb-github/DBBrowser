@@ -1,0 +1,2194 @@
+' Commence live database browser detail form script, using ActiveX controls
+' ©2007-2010 - Arno van Boven
+
+' Shows information on a Commence database. Everytime a node is clicked, the information is refreshed, 
+' thereby ensuring you always have the latest information
+' For a re-read of all categories, double-click the root node
+' If this script fails because Commence is busy, then you are simply unlucky. Try again later.
+
+' To use this, create a detail form, and remove all fields except the Name field from it
+' - put a TextBox, a CheckBox and 4 CommandButton controls on it
+' - put a Microsoft TreeView ActiveX control on it (will be TreeView1). Ignore the errors
+' - put a Microsoft ListView ActiveX control on it (will be ListView1). Ignore the errors
+' - put a Microsoft StatusBar ActiveX control on it. (will be StatusBar1). Ignore the errors
+' - create layout as you see fit
+
+' For documentation on each control, see the ActiveX Control reference on MSDN.
+' All of the controls on this form belong to a group of so-called Common Controls as found in the MSCOMCTL.OCX file.
+' When distributing your application, install the MSCOMCTL.OCX file in the user's Microsoft Windows SYSTEM folder.
+' Commence ships with this library by default, and virtually all Windows machines have it, so you *should* be fine.
+
+' IMPORTANT NOTE:
+' This script DOES NOT follow the guidelines of how to scripts ActiveX control as CCorp has (unofficially) published.
+' Scripting ActiveX controls the CCorp way is sometimes the only way, but it is a completely unintelligible one.
+' The main difference is how controls are referenced:
+'
+' in this script, I will use
+' Set ctl = Form.RunTime.GetControl(ActivexControlName)
+'
+' whereas CCorp says it should be done thus:
+' Set ctl = Form.Control(ActivexControlName)
+'
+' The way in which properties and methods etc. are manipulated is completely different for either method!
+' The methods used here are the same as how you would use them from a regular VB program
+' It is VITAL that you understand that NOT ALL ActiveX controls can be controlled this way!!
+' Commence -despite several pleas on my behalf- has so far not revealed why this is the case, or when to use which method
+
+Option Explicit
+
+' --- Commence constants ---
+'cursor types as defined by Commence
+'(note that there is no type 4 - it doesnt exist!)
+Const CMC_CURSOR_CATEGORY = 0
+Const CMC_CURSOR_VIEW = 1
+Const CMC_CURSOR_PILOTAB = 2
+Const CMC_CURSOR_PILOTMEMO = 3
+Const CMC_CURSOR_PILOTTODO = 5
+Const CMC_CURSOR_PILOTAPPT = 6
+Const CMC_CURSOR_OUTLOOKAB = 7
+Const CMC_CURSOR_OUTLOOKAPPT = 8
+Const CMC_CURSOR_EMAILLOG = 9
+Const CMC_CURSOR_OUTLOOKTASK = 10
+'flag types as defined by Commence
+Const CMC_FLAG_DEFAULT = 0
+Const CMC_FLAG_FIELD_NAME = &H1
+'names of Other Apps preferences
+Const PREF_PILOTAB = "Palm Pilot Address Book"
+Const PREF_PILOTMEMO = "Palm Pilot Memo Pad"
+Const PREF_PILOTTODO = "Palm Pilot To Do List"
+Const PREF_PILOTAPPT = "Palm Pilot Date Book"
+Const PREF_OUTLOOKAB = "Microsoft Outlook Contacts"
+Const PREF_OUTLOOKAPPT = "Microsoft Outlook Calendar"
+Const PREF_EMAILLOG = "E-mail Log"
+Const PREF_OUTLOOKTASK = "Microsoft Outlook Tasks"
+'custom constants
+Const boxtitle = "Commence"
+Const CMC_DELIM = "#@!##!@#" 'delimiter for Commence
+Const CMC_DELIM2 = "@@^##^@@" 'secondary delimiter for Commence
+Const CMC_FIELD_LIMIT = 100 'maximum number of fields/connections a Commence category can have
+Const CMC_DATA_INI = "data.ini" 'Commence stores some preferences as well as sync info in this file
+
+' --- ActiveX control constants ---
+' Note that not all constants are used in this script, some are included simply for sake of completeness
+' Only constants of properties that are manipulated in this script are included, but if so, 
+' all values are given, even if only one or few is/are used
+' --- Treeview constants ---
+'treelines
+Const tvwTreeLines = 0	'Treelines shown 
+Const tvwRootLines = 1	'Rootlines shown with Treelines 
+'treerelationships
+Const tvwFirst = 0	'First Sibling 
+Const tvwLast = 1	'Last Sibling 
+Const tvwNext = 2	'Next sibling 
+Const tvwPrevious = 3	'Previous sibling 
+Const tvwChild = 4	'Child 
+'treestyle
+Const tvwTextOnly = 0	'Text only 
+Const tvwPictureText = 1	'Picture and text 
+Const tvwPlusMinusText = 2	'Plus/minus and text 
+Const tvwPlusPictureText = 3	'Plus/minus, picture, and text 
+Const tvwTreelinesText = 4	'Treelines and text 
+Const tvwTreelinesPictureText = 5	'Treelines, Picture, and Text 
+Const tvwTreelinesPlusMinusText = 6	'Treelines, Plus/Minus, and Text 
+Const tvwTreelinesPlusMinusPictureText = 7	'Treelines, Plus/Minus, Picture, and Text 
+'labeledit
+Const tvwAutomatic = 0	'Label Editing is automatic 
+Const tvwManual = 1	'Label Editing must be invoked 
+
+' --- ListView constants ---
+'style
+Const lvwIcon = 0 '(Default) Icon. Each ListItem object is represented by a full-sized (standard) icon and a text label. 
+Const lvwSmallIcon = 1 'SmallIcon. Each ListItem is represented by a small icon and a text label that appears to the right of the icon. The items appear horizontally. 
+Const lvwList = 2 'List. Each ListItem is represented by a small icon and a text label that appears to the right of the icon. Each ListItem appears vertically and on its own line with information arranged in columns. 
+Const lvwReport = 3 ' Report. Each ListItem is displayed with its small icons and text labels. You can provide additional information about each ListItem. The icons, text labels, and information appear in columns with the leftmost column containing the small icon, followed by the text label. Additional columns display the text for each of the item's subitems. 
+'labeledit
+Const lvwAutomatic = 0	'Label Editing is automatic 
+Const lvwManual = 1	'Label Editing must be invoked 
+'sorting
+Const lvwAscending = 0 	'(Default) Ascending order.
+Const lvwDescending  = 1 	'Descending order.
+' --- Statusbar constants ---
+Const sbrNormal = 0	'Normal. StatusBar is divided into panels. 
+Const sbrSimple = 1	'Simple. StatusBar has only one large panel and SimpleText.
+'panel style
+Const sbrText = 0 'Text and/or bitmap displayed. 
+Const sbrCaps = 1 'Caps Lock status displayed. 
+Const sbrNum = 2 'Number Lock status displayed. 
+Const sbrIns = 3 'Insert key status displayed. 
+Const sbrScrl = 4 'Scroll Lock status displayed. 
+Const sbrTime = 5 'Time displayed in System format. 
+Const sbrDate = 6 'Date displayed in System format. 
+Const sbrKana = 7 'Kana. displays the letters KANA in bold when scroll lock is enabled, and dimmed when disabled. 
+'bevel style
+Const sbrNoBevel = 0 'No bevel. 
+Const sbrInset = 1 'Bevel inset. 
+Const sbrRaised = 2 'Bevel raised.
+'auto-size
+Const sbrNoAutoSize = 0 'No Autosizing. 
+Const sbrSpring = 1 'Extra space divided among panels. 
+Const sbrContents = 2 'Fit to contents. 
+
+'list view content type (these are custom values, i.e. we invented them ourselves)
+Const LV_SHOW_DEFAULT = 0
+Const LV_SHOW_VIEW = 1
+Const LV_SHOW_CAT = 2
+Const LV_SHOW_IDF = 4
+Const LV_SHOW_CON = 8
+Const LV_SHOW_FILELIST = 16
+Const LV_SHOW_FILEINFO = 32
+
+'used with registry class
+Const REG_KEY_COMMENCE = "Software\Commence" 'this keyname is the same for both subtrees
+'registry subtree constants (system defined)
+Const HKEY_CLASSES_ROOT = &H80000000
+Const HKEY_CURRENT_USER = &H80000001
+Const HKEY_LOCAL_MACHINE = &H80000002
+Const HKEY_USERS = &H80000003
+Const HKEY_CURRENT_CONFIG = &H80000005
+Const HKEY_DYN_DATA = &H80000006
+'registry value types (system defined)
+Const REG_SZ = 1
+Const REG_EXPAND_SZ = 2
+Const REG_BINARY = 3
+Const REG_DWORD = 4
+Const REG_MULTI_SZ = 7 
+
+' --- global variables ---
+Dim oCmc ' Commence database object
+Dim oConv ' Commence Conversation object
+Dim oCur ' Commence Cursor object
+dim oQrs ' Commence QueryRowSet object
+Dim strDDE ' string to store DDE command in
+
+Dim oTvw 'TreeView ActiveX control
+Dim oLvw 'ListView ActiveX control
+Dim oSbr 'Statusbar ActiveX control
+Dim oTxt2 'TextBox Control
+Dim arrPnlText 'array for holding panel texts
+Dim oListView1Content 'ListViewContents class object variable
+Dim sTmp 'general purpose temp string
+Dim iSortColumn 'integer for storing sorted column in listview
+
+Dim strActiveCategory 'current category any action is performed on
+Dim arrDBDef 'database definition array
+Dim arrCats	'list of category names
+Dim arrCatDef 'Category definition array
+Dim arrViews 'list of views
+Dim arrViewDef 'View definition array
+Dim arrFields 'list of fieldnames
+Dim arrFieldDef 'Field definition array
+Dim arrForms 'list of detail forms
+Dim arrCons 'list of connections
+Dim arrDesks 'list of desktops
+Dim arrTriggers 'list of triggers (to which Agents can respond)
+Dim arrXMLFormFiles 'dictionary object containing category- and corresponding form names
+Dim bFormDataLoaded 'boolean holding whether we have read form details yet
+Dim dicTempFiles 'dictionary object that will hold all temp files we create so we can delete them when we're done
+Dim clsIni	'inifile class object (data.ini)
+
+'used with registry routines
+Dim bRegHive
+Dim strRegHive
+Dim subkey
+Dim lrc
+Dim oReg
+Dim oLastError
+Dim lRegCounter
+Dim bHKCUParsed 'boolean to tell if we already read this key
+Dim bHKLMParsed 'boolean to tell if we already read this key
+
+' --- events ---
+Sub Form_OnCancel()
+	Call CleanUp
+End Sub
+
+Sub Form_OnLeaveTab(ByVal TabName)
+	Call CleanUp
+End Sub
+
+Sub Form_OnEnterTab(ByVal TabName)
+
+    Set oCmc = Application.Database
+	'hide the name field - for some reason Commence requires that at least 1 data-bound field is present.  A bug
+	Form.RunTime.GetControl("TextBox1").Visible = False
+
+	'get a reference to the treeview
+	Set oTvw = Form.RunTime.GetControl("TreeView1")
+	oTvw.Style = tvwTreelinesPlusMinusText 'set treeview style
+	oTvw.LabelEdit = tvwManual 'prevents users from being able to edit nodenames
+
+	'get a reference to the listview
+	Set oLvw = Form.RunTime.GetControl("ListView1")
+	'set ListView display mode to Report, this makes columnheader bar visible
+	oLvw.View = lvwReport 'Report mode
+	oLvw.Sorted = True
+	oLvw.LabelEdit = lvwManual 'prevents users from being able to edit listitem values
+
+	'get a reference to the statusbar control
+	Set oSbr = Form.RunTime.GetControl("StatusBar1")
+	oSbr.Style = sbrNormal
+
+	'get a reference to the TextBox control
+	Set oTxt2 = Form.RunTime.GetControl("TextBox2")
+	With oTxt2 'resize and set position
+		.Left = oLvw.Left
+		.Top = oLvw.Top
+		.Height = oLvw.Height
+		.Width = oLvw.Width
+		'.Visible = True
+	End With
+
+	Set dicTempFiles = CreateObject("Scripting.Dictionary") 'create a dictionary to hold any temporary filenames we may create
+
+	On Error Resume Next
+	'get a reference to the registry through WMI - do we need admin rights for this?
+	Set oReg = GetObject("winmgmts:{impersonationLevel=impersonate,authenticationLevel=Default}!\\" _
+							& "." & "\root\default:StdRegProv") '"." means local computer
+	
+	If Err.Number <> 0 Then
+		Set oLastError = CreateObject("WbemScripting.SWbemLastError")
+		regParse = Err.Description & ":" & Err.Number & ":" & oLastError.getObjectText_(1)
+		Set oReg = Nothing
+		Set oLastEror = Nothing
+		MsgBox regParse, vbExclamation, boxtitle
+	End If
+	lRegCounter = 0 'set a counter that keeps track of iterations thru registry
+	On Error GoTo 0
+
+	Call InitializeFormData 'initialize the form
+
+End Sub
+
+Sub Form_OnClick(ByVal ControlID)
+
+	Select case ControlID
+
+		Case "CommandButton1" 'Close button
+			Call CleanUp
+			Form.Cancel
+			Exit Sub
+
+		Case "CommandButton2" 'Script button
+			Call ShowFormScript(strActiveCategory, oLvw.ListItems(oLvw.SelectedItem.Index).Text)
+
+		Case "CommandButton3" 'XML button
+			Call ShowFormXML(strActiveCategory, oLvw.ListItems(oLvw.SelectedItem.Index).SubItems(1))
+
+		Case "CommandButton4" 'Back button when the textbox is being shown
+			Call ToggleTextBox(0)
+
+	End Select
+
+End Sub
+
+
+Sub Form_OnActiveXControlEvent(ByVal ControlName, ByVal EventName, ByVal ParameterArray)
+ 'pass events for each control to event handler routine for the control
+
+	Select Case ControlName
+
+		Case "TreeView1"
+			Call HandleTreeViewEvents(EventName, ParameterArray)
+
+		Case "ListView1" 'ListView1 was assigned to oLvw variable
+			Call HandleListView1Events(EventName, ParameterArray)
+
+	End Select 'control name
+
+End Sub
+
+' --- event handler routines ---
+Sub HandleTreeViewEvents(EventName, params)
+	'handle the events for the treeview
+	'note that we use either 2, 3 or 4 characters of the keyname
+	'this is not ideal but yeh well...
+	'the idea is to allow for dynamic groups of nodes
+	'for example: ini entries or registry keys
+
+	Dim oNode, i
+
+	'we'll trap only a subset of events
+	Select Case EventName
+
+		Case "NodeClick"
+
+			'determine which node was clicked
+			Set oNode = oTvw.SelectedItem		
+			'clicking a node in the treeview will display details about the node in the listview
+			'this listview is sorted by default, we defined that earlier (or could be done at design time)
+			'however, there can be exceptions. Here we'll restore the Sorted property
+			oLvw.Sorted = True
+
+			'set default form layout
+			Call ToggleDefaultLayout
+
+			'several of the events below update the statusbar
+			'in some cases, it is appropriate to do so from here,
+			'in others, it is better to leave that to event routine
+			'here, we will just clear it first
+			ReDim arrPnlText(0)
+			Call AddStatusBarPanel(0, arrPnlText)	
+
+			'different nodes require different actions
+			'we'll identify them by their key:		
+			Select Case Left(oNode.Key,3) 'just use first 3 chars			
+
+				Case "cmc" 'root
+					Call PopulateListViewWithDatabaseDetails
+					ReDim arrPnlText(2)
+					arrPnlText(0) = "Categories: " & GetCategoryCount
+					arrPnlText(1) = "Desktops: " & GetDesktopCount
+					arrPnlText(2) = "Triggers: " & GetTriggerCount
+					Call AddStatusBarPanel(3, arrPnlText)
+				Case "cts" 'categories
+					Call PopulateListViewWithCategoryNames
+					ReDim arrPnlText(0)
+					arrPnlText(0) = "Categories: " & GetCategoryCount
+					Call AddStatusBarPanel(1, arrPnlText)
+				Case "cat" 'category details
+					Call PopulateListViewWithCategoryDetails(oNode.Text)
+					ReDim arrPnlText(5)
+					Dim iFlds, iCons
+					iFlds = GetFieldCount(oNode.Text)
+					iCons = GetConnectionCount(oNode.Text)
+					arrPnlText(0) = "Fields: " & iFlds
+					arrPnlText(1) = "Connections: " & iCons
+					arrPnlText(2) = "Views: " & GetViewCount(oNode.Text)
+					arrPnlText(3) = "Forms: " & GetFormCount(oNode.Text)
+					arrPnlText(4) = "Items: " & GetItemCount(oNode.Text)
+					'arrPnlText(5) = "Available fld/con: " & CMC_FIELD_LIMIT - iFlds - iCons
+					Call AddStatusBarPanel(5, arrPnlText)
+				Case "fld" 'fields
+					Call PopulateListViewWithFieldNames(oNode.Parent.Text) 'the parent holds the category name
+					ReDim arrPnlText(0)
+					arrPnlText(0) = "Fields: " & GetFieldCount(oNode.Parent.Text)
+					Call AddStatusBarPanel(1, arrPnlText)
+				Case "viw" 'views
+					'Call PopulateListViewWithViewNames(oNode.Parent.Text) 'the parent holds the category name
+					Call PopulateListViewWithViewDetails(oNode.Parent.Text) 'the parent holds the category name
+					ReDim arrPnlText(0)
+					arrPnlText(0) = "Views: " & GetViewCount(oNode.Parent.Text)
+					Call AddStatusBarPanel(1, arrPnlText)
+				Case "con" 'connections
+					Call PopulateListViewWithConnectionNames(oNode.Parent.Text) 'the parent holds the category name
+					ReDim arrPnlText(0)
+					arrPnlText(0) = "Connections: " & GetConnectionCount(oNode.Parent.Text)
+					Call AddStatusBarPanel(1, arrPnlText)
+				Case "frm" 'forms
+					strActiveCategory = oNode.Parent.Text 'remember the active category
+					Call PopulateListViewWithFormNames(oNode.Parent.Text) 'the parent holds the category name
+					ReDim arrPnlText(0)
+					arrPnlText(0) = "Forms: " & GetFormCount(oNode.Parent.Text)
+					Call AddStatusBarPanel(1, arrPnlText)
+				Case "dsk" 'desktops
+					Call PopulateListViewWithDesktopNames
+					ReDim arrPnlText(0)
+					arrPnlText(0) = "Desktops: " & GetDesktopCount
+					Call AddStatusBarPanel(1, arrPnlText)
+				Case "trg" 'DDE agent triggers
+					Call PopulateListViewWithTriggerNames
+					ReDim arrPnlText(0)
+					arrPnlText(0) = "Triggers: " & GetTriggerCount
+					Call AddStatusBarPanel(1, arrPnlText)
+				Case "oap" 'other apps, essentially this does nothing
+				Case "ppl" 'Palm Pilot
+					Call PopulateListViewWithPalmPilotGeneral
+				Case "olk" 'Outlook
+					Call PopulateListViewWithOutlookGeneral
+				Case "ini" 'data.ini
+					Call PopulateListViewWithIniFileContent
+				Case "wgp" 'client sync details from data.ini
+					Call PopulateListViewWithClientDetails
+				Case "reg" 'registry
+					'obtain full registry key from the TreeView
+					subkey = GetFullKeyNameFromNode(oNode)
+					Call PopulateListViewWithRegistryDetails(subkey)
+				Case "fil" 'files, does nothing
+					'do nothing for now
+				Case "fdb" 'database files
+					Call PopulateListViewWithFileList(Application.DatabaseDirectory)
+				Case "fap" 'application files
+					Call PopulateListViewWithFileList(Application.ProgramDirectory)
+
+			End Select
+
+			'child nodes pertaining to Other Apps contain 4-char keynames
+			Select Case Left(oNode.Key,4)
+
+				Case "ppab" 'Palm Pilot Address Book
+					Call PopulateListViewWithFieldMappings(CMC_CURSOR_PILOTAB, "Palm Pilot Address Book")
+				Case "ppmp" 'Palm Pilot Memo
+					Call PopulateListViewWithFieldMappings(CMC_CURSOR_PILOTMEMO, PREF_PILOTMEMO)
+				Case "ppdb" 'Palm Pilot Date Book
+					Call PopulateListViewWithFieldMappings(CMC_CURSOR_PILOTAPPT, PREF_PILOTAPPT)
+				Case "pptd" 'Palm Pilot To-Do
+					Call PopulateListViewWithFieldMappings(CMC_CURSOR_PILOTTODO, PREF_PILOTTODO)
+ 				Case "olel" 'Outlook E-mail log
+					Call PopulateListViewWithFieldMappings(CMC_CURSOR_EMAILLOG, PREF_EMAILLOG)
+ 				Case "olca" 'Outlook calendar
+					Call PopulateListViewWithFieldMappings(CMC_CURSOR_OUTLOOKAPPT, PREF_OUTLOOKAPPT)
+ 				Case "olco" 'Outlook contacts
+					Call PopulateListViewWithFieldMappings(CMC_CURSOR_OUTLOOKAB, PREF_OUTLOOKAB)
+ 				Case "olta" 'Outlook tasks
+					Call PopulateListViewWithFieldMappings(CMC_CURSOR_OUTLOOKTASK, PREF_OUTLOOKTASK)
+				Case "HKCU" 'registry key HKCU
+					If Not bHKCUParsed Then
+						'may take a while, inform user what is going on
+						ReDim arrPnlText(0)
+						arrPnlText(0) = "Please wait while registry entries are being processed..."
+						Call AddStatusBarPanel(1, arrPnlText)
+						bRegHive = HKEY_CURRENT_USER
+						Call EnumRegKey(oReg, bRegHive, strRegHive, REG_KEY_COMMENCE, oNode)
+						bHKCUParsed = True
+						ReDim arrPnlText(0)
+						Call AddStatusBarPanel(0, arrPnlText)
+					End If
+				Case "HKLM" 'registry key HKLM
+					If Not bHKLMParsed Then
+						'may take a while, inform user what is going on
+						ReDim arrPnlText(0)
+						arrPnlText(0) = "Please wait while registry entries are being processed..."
+						Call AddStatusBarPanel(1, arrPnlText)
+						bRegHive = HKEY_LOCAL_MACHINE
+						Call EnumRegKey(oReg, bRegHive, strRegHive, REG_KEY_COMMENCE, oNode)
+						bHKLMParsed = True
+						ReDim arrPnlText(0)
+						Call AddStatusBarPanel(0, arrPnlText)
+					End If
+			End Select
+
+			'the nodes for the ini file sections all start with 'in' and then a number
+			Select Case Left(oNode.Key,2)
+
+				Case "in"
+					If IsNumeric(Right(oNode.Key, 1)) Then 'check for the number, we excluse the unwanted 'ini' node by this
+						Call PopulateListViewWithIniFileSectionDetails(oNode.Text)
+					End If
+
+			End Select
+
+		Case "Click"
+		'note: params is empty here because Click isn't specific to this control
+
+		Case "Expand"
+		'not sure how to use this
+
+		Case "DblClick"
+
+			'determine which node was clicked
+			Set oNode = oTvw.SelectedItem
+			'different nodes require different actions
+			'we'll identify them by their key:		
+			Select Case Left(oNode.Key,3) 'just use first 3 chars
+
+				Case "cmc" 'root node
+					If oNode.Expanded = True Then
+						Dim reply : reply = MsgBox("Do you want to re-read all database information", vbQuestion + vbYesNo, boxtitle)
+						If Reply = vbYes Then Call InitializeFormData
+					End If
+
+			End Select 'node key
+
+	End Select 'event name
+
+	Set oNode = Nothing
+
+End Sub
+
+Sub HandleListView1Events(EventName, params)
+	'handle the events for the listview
+	Dim oColHead
+	Dim strDDE
+	Dim FSO
+
+	'assign object to ListViewContents
+	oListView1Content.Item = oLvw
+
+	Select Case EventName
+
+		Case "DblClick"
+			'note: params is empty here because DblClick isn't specific to this control
+			'MsgBox "DblClick event in ListView1" 'debug
+			'oTxt.Text = oLvw.SelectedItem.Index 'returns index of selected item 'debug
+			'oTxt.text = oTxt.Text & vbCrLf & oLvw.ListItems(oLvw.SelectedItem.Index).Text 'debug
+			'remember that this item may have sublistitems that can be accessed this way, knowing the 'parent' item
+			Select Case oListView1Content.ContentType 'the action depends on what is showing in the ListView
+
+				Case LV_SHOW_VIEW
+					Call ShowView(oLvw.ListItems(oLvw.SelectedItem.Index).Text)
+					'the above is cryptic, isnt it? oLvw.SelectedItem is the item, the 'line' clicked on in the listview.
+					'It contains a number which is available thru its Index property, identifying it in the collection of listview items
+					'so, we use that Index to get the Text property from the clicked listview item
+
+				Case LV_SHOW_IDF
+					Call ShowFormScript(strActiveCategory, oLvw.ListItems(oLvw.SelectedItem.Index).Text)
+
+				Case LV_SHOW_FILELIST
+					'when showing the file list, a user may click a file or folder
+					'so the first thing we need to do is examine whether we are dealing with a folder
+					'we have this information in the subitems, but that is language specific
+					'we will use the FolderExists method of the FSO instead
+					Set FSO = CreateObject("Scripting.FileSystemObject")
+					If FSO.FolderExists(oLvw.ListItems(oLvw.SelectedItem.Index).Key) Then 'the key holds the file/foldername
+						'assume we are dealing with a folder
+						'note that should the folder not exist, we get a false negative here! Unlikely, but still
+						Call PopulateListViewWithFileList(oLvw.ListItems(oLvw.SelectedItem.Index).Key)
+					Else
+						Call PopulateListViewWithFileDetails(oLvw.ListItems(oLvw.SelectedItem.Index).Key) 'filename is in the key of the ListItem object
+					End If
+					Set FSO = Nothing
+
+				Case LV_SHOW_FILEINFO
+					'in this view, there is only 1 ListItem that contains a key; it holds the path of the current directory for the displayed file
+					'using that effectively takes us back to the file listing, which is just what we want
+					Call PopulateListViewWithFileList(oLvw.ListItems(oLvw.SelectedItem.Index).Key)
+				Case Else
+					'MsgBox "No action defined for " & EventName & " event" 'debug
+
+			End Select
+
+		Case "ColumnClick"
+			'How do we get the index of the selected column?
+			'params will only contain 1 element here: the text, not the key or index
+			'the only way seem to be to iterate thru all headers and compare the names
+			'theoretically this may fail since names need not be unique
+			For Each oColHead In oLvw.ColumnHeaders
+				If oColHead.Text = params(0) Then
+					oLvw.SortKey = oColHead.Index - 1
+					'reverse sort order if we clicked the same column
+					If oColHead.Index - 1 = iSortColumn Then
+						oLvw.SortOrder = ToggleSortOrder(oLvw.SortOrder)
+					End If
+					iSortColumn = oColHead.Index - 1 'store current columnheader
+					Exit For
+				End If
+			Next 'oColHead
+
+	End Select
+
+End Sub
+
+' --- additional ActiveX control routines ---
+Sub PopulateTreeView
+	'display initial data for TreeView
+	Dim i, rootNode, oNode, CatNode
+
+	oTvw.Nodes.Clear 'clear any existing nodes
+	oTvw.Indentation = 325 'manipulate indentation, set whatever size you prefer
+
+	Set rootNode = oTvw.Nodes.Add(,,"cmc","Database") 'add a root node
+	rootNode.EnsureVisible 'make sure node is visible
+	rootNode.Expanded = True 'show node expanded
+	'The previous should raise the Expand event but in a Commence detail form it doesnt,
+	'this DOES conform with setting properties of Commence controls NOT triggering the associated events
+	'keep this in mind!
+
+	Set oNode = oTvw.Nodes.Add(rootNode, tvwChild, "cts", "Categories") 'add node to hold categories
+	oNode.Expanded = True 'show expanded
+	'add the categorynames as child nodes
+	For i = 0 To UBound(arrCats)
+		Set CatNode = oTvw.Nodes.Add(oNode, tvwChild, "cat" & i, arrCats(i)) 'use 'cat' and a number to create the key for the node, it is required to be unique
+		oTvw.Nodes.Add CatNode, tvwChild, "fld" & i, "Fields"
+		oTvw.Nodes.Add CatNode, tvwChild, "viw" & i, "Views"
+		oTvw.Nodes.Add CatNode, tvwChild, "con" & i, "Connections"
+		oTvw.Nodes.Add CatNode, tvwChild, "frm" & i, "Forms"
+	Next 'i
+
+	'add desktops node
+	oTvw.Nodes.Add rootNode, tvwChild, "dsk", "Desktops"
+
+	'add triggers node
+	oTvw.Nodes.Add rootNode, tvwChild, "trg", "DDE Triggers"
+
+	'add Other Apps node
+	Set oNode = oTvw.Nodes.Add(rootNode, tvwChild, "oap", "Other apps")
+	'Palm Pilot settings
+	Set oNode = oTvw.Nodes.Add(oNode, tvwChild, "ppl", "Palm Pilot")
+	oTvw.Nodes.Add oNode, tvwChild, "ppdb", PREF_PILOTAPPT
+	oTvw.Nodes.Add oNode, tvwChild, "ppab", PREF_PILOTAB
+	oTvw.Nodes.Add oNode, tvwChild, "ppmp", PREF_PILOTMEMO
+	oTvw.Nodes.Add oNode, tvwChild, "pptd", PREF_PILOTTODO
+	'Outlook settings
+	Set oNode = oTvw.Nodes("oap") 'make child under this node
+	Set oNode = oTvw.Nodes.Add(oNode, tvwChild, "olk", "Microsoft Outlook")
+	oTvw.Nodes.Add oNode, tvwChild, "olel", PREF_EMAILLOG
+	oTvw.Nodes.Add oNode, tvwChild, "olca", PREF_OUTLOOKAPPT
+	oTvw.Nodes.Add oNode, tvwChild, "olco", PREF_OUTLOOKAB
+	oTvw.Nodes.Add oNode, tvwChild, "olta", PREF_OUTLOOKTASK
+
+	'add data ini node
+	Set oNode  = oTvw.Nodes.Add(rootNode, tvwChild, "ini", CMC_DATA_INI)
+	Set clsIni = New IniFile
+	clsIni.FileName = QualifyPath(Application.DatabaseDirectory) & CMC_DATA_INI
+	For i = 0 To clsIni.Sections.Count - 1
+		oTvw.Nodes.Add oNode, tvwChild, "in" & i, UnBracket(clsIni.Sections.Item(i))
+	Next 'i
+	Set clsIni = Nothing
+
+	'add node for displaying the status of the clients (the backup= lines in data.ini)
+	oTvw.Nodes.Add rootNode, tvwChild, "wgp", "Sync status"
+
+	'include registry nodes
+	Set oNode = oTvw.Nodes.Add(rootNode,tvwChild, "Registry", "Registry")
+	oTvw.Nodes.Add oNode, tvwChild, "HKCU", "HKEY_CURRENT_USER"
+	oTvw.Nodes.Add oNode, tvwChild, "HKLM", "HKEY_LOCAL_MACHINE"
+
+	'include file list
+	Set oNode = oTvw.Nodes.Add(rootNode,tvwChild, "fil", "Files")
+	oTvw.Nodes.Add oNode, tvwChild, "fdb", "Database"
+	oTvw.Nodes.Add oNode, tvwChild, "fap", "Application"
+
+	'make first node selected (this makes the treeview scroll all the way up)
+	oTvw.Nodes("cmc").Selected = True
+
+	Set oNode = Nothing
+	Set CatNode = Nothing
+	Set rootNode = Nothing
+
+End Sub
+
+Sub AddStatusBarPanel(ByVal n, ByRef arr) 'refreshes the statusbar control
+	Dim i
+	Dim oPnl
+
+	oSbr.Panels.Clear
+	Set oPnl = oSbr.Panels.Add
+	'always display database name in first panel
+	oPnl.AutoSize = sbrContents
+	oPnl.Text = oCmc.Name
+	oPnl.ToolTipText = oCmc.Name
+
+	'adds n panels to Satusbar displaying string arrPnlText
+	For i = 0 To n - 1
+		Set oPnl = oSbr.Panels.Add
+		oPnl.AutoSize = sbrContents
+		oPnl.Text = arr(i)
+		oPnl.ToolTipText = arr(i)
+		Set oPnl = Nothing
+	Next 'i
+
+End Sub
+
+Sub ClearListView1
+	'remove any existing columnheaders
+	oLvw.ColumnHeaders.Clear
+	'remove any existing listitems
+	oLvw.ListItems.Clear
+	'reset ContentType of ListViewContents object
+	oListView1Content.Clear
+End Sub
+
+Sub PopulateListViewWithDatabaseDetails()
+	Dim oListItem
+
+	'we do not want the listview to be sorted
+	'oLvw.Sorted = False
+
+	Call ClearListView1 'clear the listview
+	Call GetDatabaseDefinition 'populate arrDBDef
+	'add columnheaders
+	oLvw.Columnheaders.Add ,,"Property", oLvw.Width / 4
+	oLvw.Columnheaders.Add ,,"Value", oLvw.Width * 3/4
+
+	'add ListView items
+	Set oListItem = oLvw.ListItems.Add(,,"Name")
+	'and their subitems..
+	oListItem.SubItems(1) = oCmc.Name
+	Set oListItem = oLvw.ListItems.Add(,,"Path")
+	oListItem.SubItems(1) = oCmc.Path
+	Set oListItem = oLvw.ListItems.Add(,,"Version (short)")
+	oListItem.SubItems(1) = oCmc.Version
+	Set oListItem = oLvw.ListItems.Add(,,"Version (long)")
+	oListItem.SubItems(1) = oCmc.VersionExt
+	Set oListItem = oLvw.ListItems.Add(,,"Shared")
+	oListItem.SubItems(1) = oCmc.Shared
+	Set oListItem = oLvw.ListItems.Add(,,"Server")
+	If CInt(Mid(arrDBDef(2),9,1)) = 1 Then
+		oListItem.SubItems(1) = "True"
+	Else
+		oListItem.SubItems(1) = "False"
+	End If
+	Set oListItem = oLvw.ListItems.Add(,,"User name")
+	oListItem.SubItems(1) = arrDBDef(3)
+	Set oListItem = oLvw.ListItems.Add(,,"Spool path")
+	oListItem.SubItems(1) = arrDBDef(4)
+	Set oListItem = Nothing
+
+End Sub
+
+Sub PopulateListViewWithFormNames(ByVal sCat)
+	Dim i, arr
+	Dim oListItem
+
+	If Not bFormDataLoaded Then
+		ReDim arrPnlText(0)
+		arrPnlText(0) = "Please wait while the Detail Form lists are being processed..."
+		Call AddStatusBarPanel(1, arrPnlText)
+		Call PopulateFormFiles 'parse form files to find their corresponding XML source file
+	End If
+
+	Call ClearListView1
+	Call ToggleFormDataLayout()
+	Call GetFormNames(sCat) 'populate view list
+	oLvw.ColumnHeaders.Add ,,"Detail Form Name"
+	oLvw.ColumnHeaders.Add ,,"Detail Form File"
+
+
+	For i = 0 To UBound(arrForms)
+		Set oListItem = oLvw.ListItems.Add(,,arrForms(i))
+		oListItem.SubItems(1) = GetFormFileName(sCat, arrForms(i))
+		Set oListItem = Nothing
+	Next 'i
+
+	oListView1Content.ContentType = LV_SHOW_IDF
+
+End Sub
+
+Sub PopulateListViewWithConnectionNames(ByVal sCat)
+	Dim i, arr
+	Dim oListItem
+
+	Call ClearListView1
+	Call GetConnectionNames(sCat) 'populate view list
+	oLvw.ColumnHeaders.Add ,,"Connection Name"
+	oLvw.ColumnHeaders.Add ,,"To Category"
+
+	For i = 0 To UBound(arrCons)
+		arr = Split(arrCons(i), CMC_DELIM2)
+		Set oListItem = oLvw.ListItems.Add(,,arr(0))
+		oListItem.SubItems(1) = arr(1)
+		Set oListItem = Nothing
+	Next 'i
+
+End Sub
+
+Sub PopulateListViewWithViewNames(ByVal sCat)
+	Dim i
+	Dim oListItem
+
+	Call ClearListView1
+	Call GetViewNames(sCat) 'populate view list
+	oLvw.ColumnHeaders.Add ,,"View name"
+
+	For i = 0 To UBound(arrViews)
+		Set oListItem = oLvw.ListItems.Add(,,arrViews(i))
+		Set oListItem = Nothing
+	Next 'i
+
+	oListView1Content.ContentType = LV_SHOW_VIEW 'tell oListView1Content we are dealing with views now
+
+End Sub
+
+Sub PopulateListViewWithViewDetails(ByVal sCat)
+	Dim i
+	Dim oListItem
+
+	Call ClearListView1
+	Call GetViewNames(sCat) 'populate view list
+	oLvw.ColumnHeaders.Add ,,"View name"
+	oLvw.ColumnHeaders.Add ,,"View type"
+	oLvw.ColumnHeaders.Add ,,"Category"
+	oLvw.ColumnHeaders.Add ,,"File name"
+
+	For i = 0 To UBound(arrViews)
+		Call GetViewDefinition(arrViews(i))
+		Set oListItem = oLvw.ListItems.Add(,,arrViewDef(0))
+		oListItem.SubItems(1) = arrViewDef(1)
+		oListItem.SubItems(2) = arrViewDef(2)
+		oListItem.SubItems(3) = arrViewDef(3)
+		Set oListItem = Nothing
+	Next 'i
+
+	oListView1Content.ContentType = LV_SHOW_VIEW 'tell oListView1Content we are dealing with views now
+
+End Sub
+
+Sub PopulateListViewWithTriggerNames()
+	Dim i
+	Dim oListItem
+
+	Call ClearListView1
+	Call GetTriggerNames 'populate trigger list
+	oLvw.ColumnHeaders.Add ,,"DDE Trigger name", oLvw.Width
+
+	For i = 0 To UBound(arrTriggers)
+		Set oListItem = oLvw.ListItems.Add(,,arrTriggers(i))
+		Set oListItem = Nothing
+	Next 'i
+
+End Sub
+
+Sub PopulateListViewWithDesktopNames()
+	Dim i
+	Dim oListItem
+
+	Call ClearListView1
+	Call GetDesktopNames 'populate desktop list
+	oLvw.ColumnHeaders.Add ,,"Desktop name", oLvw.Width
+
+	For i = 0 To UBound(arrDesks)
+		Set oListItem = oLvw.ListItems.Add(,,arrDesks(i))
+		Set oListItem = Nothing
+	Next 'i
+
+End Sub
+
+Sub PopulateListViewWithFieldNames(ByVal sCat)
+	'retrieve field definition and display in ListView
+	Dim i
+	Dim oListItem
+
+	Call ClearListView1
+	'add columnheaders
+	oLvw.ColumnHeaders.Add ,,"Name"
+	oLvw.ColumnHeaders.Add ,,"Type"
+	oLvw.ColumnHeaders.Add ,,"ComboBox"
+	oLvw.ColumnHeaders.Add ,,"Shared"
+	oLvw.ColumnHeaders.Add ,,"Mandatory"
+	oLvw.ColumnHeaders.Add ,,"Recurring"
+	oLvw.ColumnHeaders.Add ,,"Size"
+	oLvw.ColumnHeaders.Add ,,"Default"
+
+	Call GetFieldNames(sCat) 'populate arrFields
+	For i = 0 To UBound(arrFields)
+		'get field definition
+		Call GetFieldDefinition(sCat, arrFields(i))
+		'add a new ListItem
+		Set oListItem = oLvw.ListItems.Add(,,arrFields(i))
+		oListItem.SubItems(1) = FieldTypeToString(arrFieldDef(0))
+		oListItem.SubItems(2) = Mid(arrFieldDef(1), 7, 1)
+		oListItem.SubItems(3) = Mid(arrFieldDef(1), 8, 1)
+		oListItem.SubItems(4) = Mid(arrFieldDef(1), 9, 1)
+		oListItem.SubItems(5) = Mid(arrFieldDef(1), 10, 1)
+		oListItem.SubItems(6) = arrFieldDef(2)
+		oListItem.SubItems(7) = arrFieldDef(3)
+		Set oListItem = Nothing
+	Next 'i
+
+End Sub
+
+Sub PopulateListViewWithCategoryNames()
+	'retrieve field definition and display in ListView
+	Dim i
+	Dim oListItem
+
+	Call ClearListView1
+	'add columnheaders
+	oLvw.ColumnHeaders.Add ,,"Name"
+	oLvw.ColumnHeaders.Add ,,"MaxItems"
+	oLvw.ColumnHeaders.Add ,,"Shared"
+	oLvw.ColumnHeaders.Add ,,"(unused)"
+	oLvw.ColumnHeaders.Add ,,"Duplicates"
+	oLvw.ColumnHeaders.Add ,,"Clarified"
+	oLvw.ColumnHeaders.Add ,,"Separator"
+	oLvw.ColumnHeaders.Add ,,"Clarify Field"
+
+	For i = 0 To UBound(arrCats) 'arrCats is already populated(!)
+		'get field definition
+		Call GetCategoryDefinition(arrCats(i)) 'populate arrCatDef
+		Set oListItem = oLvw.ListItems.Add(,,arrCats(i)) 'add a new ListItem
+		oListItem.SubItems(1) = arrCatDef(0)
+		oListItem.SubItems(2) = Mid(arrCatDef(1), 7, 1)
+		oListItem.SubItems(3) = Mid(arrCatDef(1), 8, 1)
+		oListItem.SubItems(4) = Mid(arrCatDef(1), 9, 1)
+		oListItem.SubItems(5) = Mid(arrCatDef(1), 10, 1)
+		oListItem.SubItems(6) = arrCatDef(2)
+		oListItem.SubItems(7) = arrCatDef(3)
+		Set oListItem = Nothing
+	Next 'i
+
+End Sub
+
+Sub PopulateListViewWithCategoryDetails(ByVal sCat)
+	Dim oListItem
+	Dim iFlds, iCons
+
+	Call ClearListView1
+	'oLvw.Sorted = False 'don't want listview to sort
+	oLvw.ColumnHeaders.Add ,,"Object"
+	oLvw.ColumnHeaders.Add ,,"Number"
+
+	iFlds = GetFieldCount(sCat)
+	iCons = GetConnectionCount(sCat)
+
+	'Set oListItem = oLvw.ListItems.Add(,,"Category name")
+	'oListItem.SubItems(1) = sCat
+	Set oListItem = oLvw.ListItems.Add(,,"Fields")
+	oListItem.SubItems(1) = iFlds
+	Set oListItem = oLvw.ListItems.Add(,,"Connections")
+	oListItem.SubItems(1) = iCons
+	Set oListItem = oLvw.ListItems.Add(,,"Available fields/connections")
+	oListItem.SubItems(1) = CMC_FIELD_LIMIT - iFlds - iCons
+	Set oListItem = oLvw.ListItems.Add(,,"Items")
+	oListItem.SubItems(1) = GetItemCount(sCat)
+	Set oListItem = oLvw.ListItems.Add(,,"Views")
+	oListItem.SubItems(1) = GetViewCount(sCat)
+	Set oListItem = oLvw.ListItems.Add(,,"Forms")
+	oListItem.SubItems(1) = GetFormCount(sCat)
+	Set oListItem = Nothing
+
+End Sub
+
+Sub PopulateListViewWithPalmPilotGeneral()
+	Dim oListItem
+	Dim arr(3,1) '2-dimensional array
+	Dim i
+
+	'populate array with cursor type and corresponding preferenced setting
+	arr(0,0) = CMC_CURSOR_PILOTAPPT
+	arr(0,1) = PREF_PILOTAPPT
+	arr(1,0) = CMC_CURSOR_PILOTAB
+	arr(1,1) = PREF_PILOTAB
+	arr(2,0) = CMC_CURSOR_PILOTMEMO
+	arr(2,1) = PREF_PILOTMEMO
+	arr(3,0) = CMC_CURSOR_PILOTTODO
+	arr(3,1) = PREF_PILOTTODO
+
+	Call ClearListView1
+	'oLvw.Sorted = False 'don't want listview to sort
+	oLvw.ColumnHeaders.Add ,,"Palm Pilot Link"
+	oLvw.ColumnHeaders.Add ,,"Mapped to"
+	For i = 0 To UBound(arr, 1) 'loop 1st dimension
+		Set oListItem = oLvw.ListItems.Add(,,arr(i,1))
+		On Error Resume Next
+		Set oCur = oCmc.GetCursor(arr(i,0), "", CMC_FLAG_DEFAULT)
+		If Err.Number = 0 Then
+			oListItem.SubItems(1) = oCur.Category
+		Else
+			oListItem.SubItems(1) = "(not set)"
+		End If
+		Set oCur = Nothing
+	Next 'i
+	Set oListItem = Nothing
+
+End Sub
+
+Sub PopulateListViewWithOutlookGeneral()
+	Dim oListItem
+	Dim arr(3,1) '2-dimensional array
+	Dim i
+
+	'populate array with cursor type and corresponding preferenced setting
+	arr(0,0) = CMC_CURSOR_EMAILLOG
+	arr(0,1) = PREF_EMAILLOG
+	arr(1,0) = CMC_CURSOR_OUTLOOKAPPT
+	arr(1,1) = PREF_OUTLOOKAPPT
+	arr(2,0) = CMC_CURSOR_OUTLOOKAB
+	arr(2,1) = PREF_OUTLOOKAB
+	arr(3,0) = CMC_CURSOR_OUTLOOKTASK
+	arr(3,1) = PREF_OUTLOOKTASK
+
+	Call ClearListView1
+	'oLvw.Sorted = False 'don't want listview to sort
+	oLvw.ColumnHeaders.Add ,,"Microsoft Outlook"
+	oLvw.ColumnHeaders.Add ,,"Mapped to"
+	For i = 0 To UBound(arr, 1) 'loop 1st dimension
+		Set oListItem = oLvw.ListItems.Add(,,arr(i,1))
+		On Error Resume Next
+		Set oCur = oCmc.GetCursor(arr(i,0), "", CMC_FLAG_DEFAULT)
+		If Err.Number = 0 Then
+			oListItem.SubItems(1) = oCur.Category
+		Else
+			oListItem.SubItems(1) = "(not set)"
+		End If
+		Set oCur = Nothing
+	Next 'i
+	Set oListItem = Nothing
+	
+End Sub
+
+Sub PopulateListViewWithFieldMappings(ByVal nMode, ByVal sConduit)
+	'displays fieldmappings for conduit nMode in Listview
+	Dim oListItem
+	Dim i
+
+	Call ClearListView1
+	'oLvw.Sorted = False 'don't sort listview
+	oLvw.ColumnHeaders.Add ,,sConduit
+	oLvw.ColumnHeaders.Add ,,"Commence field"
+	'default value for listview
+	oLvw.ListItems.Add ,,"(preferences for " & sConduit & " are not set)"
+
+	On Error Resume Next
+	Set oCur = oCmc.GetCursor(nMode, "", CMC_FLAG_DEFAULT) 'special cursors do not take a category name, leave it empty
+	'if no mapping was made, GetCursor will fail
+	'so only continue if no error occurred
+	If Err.Number = 0 Then 'we have a mapping
+		oLvw.ListItems.Clear 'clear items in listview
+		'get a rowset for obtaining the column (=field) details
+		Set oQrs = oCur.GetQueryRowSet(0,CMC_FLAG_DEFAULT) 'empty rowset object(!)
+		For i = 0 To oQrs.ColumnCount - 1
+			Set oListItem = oLvw.ListItems.Add(,,oQrs.GetColumnLabel(i, CMC_FLAG_DEFAULT)) 'conduit field
+			oListItem.SubItems(1) = oQrs.GetColumnLabel(i, CMC_FLAG_FIELD_NAME) 'Commence field
+		Next 'i
+	End If
+	Err.Clear
+	Set oQrs = Nothing
+	Set oCur = Nothing
+
+End Sub
+
+Sub PopulateListViewWithIniFileContent()
+	'displays contents of data.ini in Textbox
+
+	Call ClearListView1
+	Set clsIni = New IniFile
+	clsIni.FileName = oCmc.Path & "\" & CMC_DATA_INI
+	Call ToggleTextBox(1)
+	oTxt2.Text = clsIni.Content 'populate text control
+	Set clsIni = Nothing
+
+End Sub
+
+Sub PopulateListViewWithIniFileSectionDetails(ByVal sSection)
+	Dim oListItem
+	Dim i
+
+	Call ClearListView1
+	Call ToggleTextBox(0)
+	oLvw.Sorted = True 'sort listview
+	oLvw.ColumnHeaders.Add ,,"Key"
+	oLvw.ColumnHeaders.Add ,,"Value"
+
+	Set clsIni = New IniFile
+	clsIni.FileName = oCmc.Path & "\" & CMC_DATA_INI
+	clsIni.Section = sSection
+	For i = 0 To clsIni.Keys.Count - 1
+		clsIni.Key = clsIni.Keys.Item(i)
+		Set oListItem = oLvw.ListItems.Add(,,clsIni.Keys.Item(i))
+		oListItem.SubItems(1) = clsIni.Value
+		Set oListItem = Nothing
+	Next 'i
+
+	Set clsIni = Nothing
+
+End Sub
+
+Sub PopulateListViewWithClientDetails()
+	'displays the status of the clients; only available if the database is a server
+	Const WG_KEY = "Backup"
+	Dim oListItem
+	Dim i,j
+	Dim buffer
+
+	Call ClearListView1
+	Set clsIni = New IniFile
+
+	oLvw.ColumnHeaders.Add ,,"Name"
+	oLvw.ColumnHeaders.Add ,,"WGID"
+	oLvw.ColumnHeaders.Add ,,"Local"
+	oLvw.ColumnHeaders.Add ,,"Remote"
+	oLvw.ColumnHeaders.Add ,,"Status"
+	oLvw.ColumnHeaders.Add ,,"Date"
+	oLvw.ColumnHeaders.Add ,,"Time"
+	oLvw.ColumnHeaders.Add ,,"WTF?"
+
+	clsIni.FileName = oCmc.Path & "\" & CMC_DATA_INI
+	clsIni.Section = "Workgroup"
+	For i = 0 To clsIni.Keys.Count - 1
+		clsIni.Key = clsIni.Keys.Item(i)
+		If Left(clsIni.Key, Len(WG_KEY)) = WG_KEY Then 'we are only interested in the BackupX= lines
+			buffer = Split(clsIni.Value, ";")
+			Set oListItem = oLvw.ListItems.Add(,,buffer(0)) 'first item is the name
+			For j = 1 To UBound(buffer) 'add subsequent values
+				oListItem.SubItems(j) = buffer(j)
+			Next 'j
+			Set oListItem = Nothing
+		End If
+	Next 'i
+
+	Set clsIni = Nothing
+
+End Sub
+
+Sub PopulateListViewWithRegistryDetails(ByVal sKeyName)
+	Dim oListItem, j, x
+	Dim arrValueNames, arrValueTypes, ary, lrc
+	Dim regVal, bValue, sValue, bValues, dValue, sValues
+
+	Call ClearListView1
+	'oLvw.Sorted = False 'don't want listview to sort
+	oLvw.ColumnHeaders.Add ,,"Name"
+	oLvw.ColumnHeaders.Add ,,"Type"
+	oLvw.ColumnHeaders.Add ,,"Data"
+
+	j = 0
+	lrc = oReg.EnumValues(bRegHive, sKeyName, arrValueNames, arrValueTypes)
+	If IsArray(arrValueNames) And lrc = 0 Then
+	 For Each ary In arrValueNames
+		If ary = "" Then
+			Set oListItem = oLvw.ListItems.Add(,,"(default)")
+		Else
+			Set oListItem = oLvw.ListItems.Add(,,ary)
+		End If
+		Select Case arrValueTypes(j)
+	   Case REG_SZ
+			oListItem.SubItems(1) = "REG_SZ"
+	    regVal = oReg.GetStringValue(bRegHive, sKeyName, ary, sValue)
+			oListItem.SubItems(2) = sValue
+	   Case REG_EXPAND_SZ
+			oListItem.SubItems(1) = "REG_EXPAND_SZ"
+	    regVal = oReg.GetExpandedStringValue(bRegHive, sKeyName, ary, sValue)
+			oListItem.SubItems(2) = sValue
+	   Case REG_BINARY
+			oListItem.SubItems(1) = "REG_BINARY"
+	    regVal = oReg.GetBinaryValue(bRegHive, sKeyName, ary, bValues)
+	    If IsArray(bValues) Then
+				For Each bValue in bValues
+					oListItem.SubItems(2) = oListItem.SubItems(2) & Space(1) & bValue
+				Next 'bValue
+			Else
+				oListItem.SubItems(2) = bValues
+	    End If
+	   Case REG_DWORD
+			oListItem.SubItems(1) = "REG_DWORD"
+	    regVal = oReg.GetDWORDValue(bRegHive, sKeyName, ary, dValue)
+			oListItem.SubItems(2) = dValue
+	   Case REG_MULTI_SZ
+			oListItem.SubItems(1) = "REG_MULTI_SZ"
+	    regVal = oReg.GetMultiStringValue(bRegHive, sKeyName, ary, sValues)
+	    If IsArray(sValues) Then
+	     For Each sValue In sValues
+				oListItem.SubItems(2) = oListItem.SubItems(2) & Space(1) & sValue 
+	     Next 'sValue
+			Else
+				oListItem.SubItems(2) = sValues
+	    End If
+	   Case Else
+	    oListItem.SubItems(2) = ary & " = " & "Unknown" & vbCrLf
+	  End Select
+		j = j + 1 'iterate arrValueTypes?? Feels wrong or brilliant; you decide
+	 Next 'ary
+	End If
+	Set oListItem = Nothing
+
+End Sub
+
+Sub PopulateListViewWithFileList(ByVal strRoot)
+	'displays file list of files for current database
+	'strRoot should contain the file path to use as starting point
+	Dim oListItem
+	Dim i
+	Dim FSO, f, fld, sfld
+
+	'check if a value was passed
+	If strRoot = "" Then Exit Sub 'nothing to do
+
+	i = 0 'start counter
+
+	'disable the ability to browse below the application or database path
+	'hey, we're not the Windows Explorer, are we?
+	If (Instr(Application.ProgramDirectory, strRoot) > 0 And Len(strRoot) < Len(Application.ProgramDirectory)) _
+		Or (Instr(Application.DatabaseDirectory, strRoot) > 0 And Len(strRoot) < Len(Application.DatabaseDirectory)) Then
+		'update statusbar
+		ReDim arrPnlText(0)
+		arrPnlText(0) = "Operation not allowed, sorry."
+		Call AddStatusBarPanel(1, arrPnlText)
+		Exit Sub
+	End If
+
+	'reset and build listview
+	Call ClearListView1
+	oLvw.ColumnHeaders.Add ,,"Name"
+	oLvw.ColumnHeaders.Add ,,"Size"
+	oLvw.ColumnHeaders.Add ,,"Type"
+	oLvw.ColumnHeaders.Add ,,"Modified"
+
+	'retrieve subfolders and files from strRoot folder
+	Set FSO = CreateObject("Scripting.FileSystemObject")
+	If FSO.FolderExists(strRoot) Then
+		'update statusbar
+		ReDim arrPnlText(0)
+		arrPnlText(0) = "Please wait while files are being processed..."
+		Call AddStatusBarPanel(1, arrPnlText)
+		'retrieve folders
+		Set fld = FSO.GetFolder(strRoot)
+		'always include 'folder up' option. Note that we explicitly qualify it as path (so, with the trailing \)
+		'this is done because there seems to be an inconsistency with how Commence returns pathnames
+		'not doing so will make this option fail for the program folders
+		Set oListItem = oLvw.ListItems.Add(,QualifyPath(fld.ParentFolder),"[..]") 'use Parent folder as key(!)
+		For Each sfld in fld.SubFolders
+			Set oListItem = oLvw.ListItems.Add(,sfld.Path,"[" & sfld.Name & "]") 'use Path as key
+			'include some details
+			'no SubItems(1) because folders have no size
+			oListItem.SubItems(2) = sfld.Type
+			oListItem.SubItems(3) = sfld.DateLastModified
+		Next
+		'retrieve files
+		For Each f in  fld.Files
+			Set oListItem = oLvw.ListItems.Add(,f.Path,f.Name) 'use Path as key
+			'include some details
+			oListItem.SubItems(1) = FormatSizeToKB(f.Size)
+			oListItem.SubItems(2) = f.Type
+			oListItem.SubItems(3) = f.DateLastModified
+			i = i + 1
+		Next
+	End If
+
+	'flag listview so as to know we are showing files in it
+	oListView1Content.ContentType = LV_SHOW_FILELIST
+
+	'update statusbar
+	ReDim arrPnlText(2)
+	arrPnlText(0) = "Folders: " & fld.SubFolders.Count
+	arrPnlText(1) = "Files: " & fld.Files.Count
+	arrPnlText(2) = "Total size: " & fld.Size & " (" & FormatSize(fld.Size) & ")"
+	Call AddStatusBarPanel(3, arrPnlText)
+
+	'release objects
+	Set fld = Nothing
+	Set FSO = Nothing
+	Set oListItem = Nothing
+
+End Sub
+
+Sub PopulateListViewWithFileDetails(ByVal strFileName)
+	'show detailed info for file strFileName in listview
+	Dim oListItem
+	Dim refFile
+	Dim dateTime
+
+	'reset statusbar
+	ReDim arrPnlText(0)
+	Call AddStatusBarPanel(0, arrPnlText)	
+
+	'reset and build listview
+	Call ClearListView1
+	oLvw.ColumnHeaders.Add ,,"Properties", oLvw.Width /4
+	oLvw.ColumnHeaders.Add ,,"Value", oLvw.Width /3*2
+	oLvw.Sorted = False 'dont want listview to sort
+
+	'theoretically it is possible to delete the file prior to obtainig it's details
+	On Error Resume Next
+	'try to get reference to the file strFileName
+	Set refFile = GetObject("winMgmts:CIM_DataFile.Name='" & strFileName & "'") 'magic line pasted from web
+	If Err.Number <> 0 Then
+		Set oLastError = CreateObject("WbemScripting.SWbemLastError")
+		Set oListItem = oLvw.ListItems.Add(,,"An error occurred while trying to obtain file information")
+		oListItem.SubItems(1) = oLastError.getObjectText_(1)
+		Set oListItem = Nothing
+		Set oLastError = Nothing
+		Exit Sub
+	End If
+
+	'now that we have a WMI file object, just retrieve all properties
+	'this is likely overkill, but no harm in presenting all that is there here
+	'we will first provide a way to take the user back to the file list
+	Set oListItem = oLvw.ListItems.Add(,refFile.Drive & refFile.Path, "[back to file list]")
+	'proceed with properties
+	'note on dates:
+	'it is possible to use the SWbemDateTime object from WMI to convert dates, however
+	'this is not available on systems lower than XP so I won't use that here, will use a translator function instead
+	'this may lead to dates/times not being displayed in your own time-zone!
+	'note on error handling:
+	'we will continue to ignore all errors, since some properties may raise errors (they can be Null, etc.) Yes, I'm lazy.
+	Set oListItem = oLvw.ListItems.Add(,,"Name")
+	oListItem.SubItems(1) = refFile.Name
+	Set oListItem = oLvw.ListItems.Add(,,"Description")
+	oListItem.SubItems(1) = refFile.Description
+	Set oListItem = oLvw.ListItems.Add(,,"FileSize")
+	oListItem.SubItems(1) = refFile.FileSize & " (" & FormatSize(refFile.FileSize) & ")"
+	Set oListItem = oLvw.ListItems.Add(,,"FileType")
+	oListItem.SubItems(1) = refFile.FileType
+	Set oListItem = oLvw.ListItems.Add(,,"Version")
+	oListItem.SubItems(1) = refFile.Version
+	Set oListItem = oLvw.ListItems.Add(,,"Accessed")
+	oListItem.SubItems(1) = WMIDateStringToDate(refFile.LastAccessed)
+	Set oListItem = oLvw.ListItems.Add(,,"Modified")
+	oListItem.SubItems(1) = WMIDateStringToDate(refFile.LastModified)
+	Set oListItem = oLvw.ListItems.Add(,,"Created")
+	oListItem.SubItems(1) = WMIDateStringToDate(refFile.CreationDate)
+	Set oListItem = oLvw.ListItems.Add(,,"Installed")
+	oListItem.SubItems(1) = WMIDateStringToDate(refFile.InstallDate)
+	Set oListItem = oLvw.ListItems.Add(,,"FileName")
+	oListItem.SubItems(1) = refFile.FileName
+	Set oListItem = oLvw.ListItems.Add(,,"Extension")
+	oListItem.SubItems(1) = refFile.Extension
+	Set oListItem = oLvw.ListItems.Add(,,"Path")
+	oListItem.SubItems(1) = refFile.Path
+	Set oListItem = oLvw.ListItems.Add(,,"Drive")
+	oListItem.SubItems(1) = refFile.Drive
+	Set oListItem = oLvw.ListItems.Add(,,"Caption")
+	oListItem.SubItems(1) = refFile.Caption
+	Set oListItem = oLvw.ListItems.Add(,,"Archive")
+	oListItem.SubItems(1) = refFile.Archive
+	Set oListItem = oLvw.ListItems.Add(,,"Hidden")
+	oListItem.SubItems(1) = refFile.Hidden
+	Set oListItem = oLvw.ListItems.Add(,,"Readable")
+	oListItem.SubItems(1) = refFile.Readable
+	Set oListItem = oLvw.ListItems.Add(,,"Writeable")
+	oListItem.SubItems(1) = refFile.Writeable
+	Set oListItem = oLvw.ListItems.Add(,,"AccessMask")
+	oListItem.SubItems(1) = refFile.AccessMask
+	Set oListItem = oLvw.ListItems.Add(,,"Compressed")
+	oListItem.SubItems(1) = refFile.Compressed
+	Set oListItem = oLvw.ListItems.Add(,,"CompressionMethod")
+	oListItem.SubItems(1) = refFile.CompressionMethod
+	Set oListItem = oLvw.ListItems.Add(,,"CreationClassName")
+	oListItem.SubItems(1) = refFile.CreationClassName
+	Set oListItem = oLvw.ListItems.Add(,,"CSCreationClassName")
+	oListItem.SubItems(1) = refFile.CSCreationClassName
+	Set oListItem = oLvw.ListItems.Add(,,"CSName")
+	oListItem.SubItems(1) = refFile.CSName
+	Set oListItem = oLvw.ListItems.Add(,,"EightDotThreeFileName")
+	oListItem.SubItems(1) = refFile.EightDotThreeFileName
+	Set oListItem = oLvw.ListItems.Add(,,"Encrypted")
+	oListItem.SubItems(1) = refFile.Encrypted
+	Set oListItem = oLvw.ListItems.Add(,,"EncryptionMethod")
+	oListItem.SubItems(1) = refFile.EncryptionMethod
+	Set oListItem = oLvw.ListItems.Add(,,"FSCreationClassName")
+	oListItem.SubItems(1) = refFile.FSCreationClassName
+	Set oListItem = oLvw.ListItems.Add(,,"FSName")
+	oListItem.SubItems(1) = refFile.FSName
+	Set oListItem = oLvw.ListItems.Add(,,"InUseCount")
+	oListItem.SubItems(1) = refFile.InUseCount
+	Set oListItem = oLvw.ListItems.Add(,,"Manufacturer")
+	oListItem.SubItems(1) = refFile.Manufacturer
+	Set oListItem = oLvw.ListItems.Add(,,"System")
+	oListItem.SubItems(1) = refFile.System
+	Set oListItem = oLvw.ListItems.Add(,,"Status")
+	oListItem.SubItems(1) = refFile.Status
+	'flag listview so as to know we are showing file details in it
+	oListView1Content.ContentType = LV_SHOW_FILEINFO
+	'clean up
+	Set oListItem = Nothing
+	Set refFile = Nothing
+End Sub
+
+' --- Commence DDE routines ---
+Sub GetCategories()
+	'get list of category names
+	strDDE = "[GetCategoryNames(" & dq(CMC_DELIM) & ")]"
+	arrCats = Split(DDERequest(strDDE), CMC_DELIM)
+End Sub
+
+Sub GetCategoryDefinition(ByVal sCategoryName)
+	'get list of category names
+	strDDE = "[GetCategoryDefinition(" & dq(sCategoryName) & "," & dq(CMC_DELIM) & ")]"
+	arrCatDef = Split(DDERequest(strDDE), CMC_DELIM)
+End Sub
+
+Sub GetFieldNames(ByVal sCategoryName)
+	'get list of fieldnames
+	strDDE = "[GetFieldNames(" & dq(sCategoryName) & "," & dq(CMC_DELIM) & ")]"
+	arrFields = Split(DDERequest(strDDE), CMC_DELIM)
+End Sub
+
+Sub GetViewNames(ByVal sCategoryName)
+	'get list of fieldnames
+	strDDE = "[GetViewNames(" & dq(sCategoryName) & "," & dq(CMC_DELIM) & ")]"
+	arrViews = Split(DDERequest(strDDE), CMC_DELIM)
+End Sub
+
+Sub GetFormNames(ByVal sCategoryName)
+	'get list of fieldnames
+	strDDE = "[GetFormNames(" & dq(sCategoryName) & "," & dq(CMC_DELIM) & ")]"
+	arrForms = Split(DDERequest(strDDE), CMC_DELIM)
+
+End Sub
+
+Sub GetFieldDefinition(ByVal sCategoryName, ByVal sFieldName)
+	'request field definition from Commence
+	strDDE = "[GetFieldDefinition(" & dq(sCategoryName) & ","& dq(sFieldName) & "," & dq(CMC_DELIM) & ")]"
+	arrFieldDef = Split(DDERequest(strDDE), CMC_DELIM)
+End Sub
+
+Sub GetConnectionNames(ByVal sCategoryName)
+	'request connection names from Commence
+	strDDE = "[GetConnectionNames(" & dq(sCategoryName) & "," & dq(CMC_DELIM) & "," & dq(CMC_DELIM2) & ")]"
+	arrCons = Split(DDERequest(strDDE), CMC_DELIM)
+End Sub
+
+Sub GetDesktopNames()
+	'request desktop names
+	strDDE = "[GetDesktopNames(" & dq(CMC_DELIM) & ")]"
+	arrDesks = Split(DDERequest(strDDE), CMC_DELIM)
+End Sub
+
+Sub GetDatabaseDefinition()
+	'request database definition, populates the arrDBDef array
+	strDDE = "[GetDatabaseDefinition(" & dq(CMC_DELIM) & ")]"
+	arrDBDef = Split(DDERequest(strDDE), CMC_DELIM)
+End Sub
+
+Sub GetTriggerNames()
+	'request desktop names
+	strDDE = "[GetTriggerNames(" & dq(CMC_DELIM) & ")]"
+	arrTriggers = Split(DDERequest(strDDE), CMC_DELIM)
+End Sub
+
+Function GetCategoryCount()
+	'request category count
+	strDDE = "[GetCategoryCount()]"
+	GetCategoryCount = DDERequest(strDDE)
+End Function
+
+Function GetDesktopCount()
+	'request desktop count
+	strDDE = "[GetDesktopCount()]"
+	GetDesktopCount = DDERequest(strDDE)
+End Function
+
+Function GetFieldCount(ByVal sCategoryName)
+	'request field count for category scategoryname
+	strDDE = "[GetFieldCount(" & dq(sCategoryName) & ")]"
+	GetFieldCount= DDERequest(strDDE)
+End Function
+
+Function GetViewCount(ByVal sCategoryName)
+	'request field count for category scategoryname
+	strDDE = "[GetViewCount(" & dq(sCategoryName) & ")]"
+	GetViewCount = DDERequest(strDDE)
+End Function
+
+Function GetViewDefinition(ByVal sView)
+	'request view definition for view sView
+	'note that the GetViewDefinition DDE request item is undocumented!
+	strDDE = "[GetViewDefinition(" & dq(sView) & ", " & CMC_DELIM & ")]"
+	arrViewDef = Split(DDERequest(strDDE), CMC_DELIM)
+End Function
+
+Function GetFormCount(ByVal sCategoryName)
+	'request form count for category scategoryname
+	strDDE = "[GetFormCount(" & dq(sCategoryName) & ")]"
+	GetFormCount = DDERequest(strDDE)
+End Function
+
+Function GetConnectionCount(ByVal sCategoryName)
+	'request connection count for category scategoryname
+	strDDE = "[GetConnectionCount(" & dq(sCategoryName) & ")]"
+	GetConnectionCount = DDERequest(strDDE)
+End Function
+
+Function GetItemCount(ByVal sCategoryName)
+	'request item count for category scategoryname
+	strDDE = "[GetItemCount(" & dq(sCategoryName) & ")]"
+	GetItemCount = DDERequest(strDDE)
+End Function
+
+Function GetTriggerCount()
+	'request trigger count
+	strDDE = "[GetTriggerCount()]"
+	GetTriggerCount = DDERequest(strDDE)
+End Function
+
+' --- miscellaneous ---
+
+Sub PopulateFormFiles()
+	'populates variable arrXMLFormFiles with category names and corresponding form names and form file names
+	Const EXT = ".xml" 'extension of the IDF files
+	Const CAT_ID = "CategoryName" 'Attribute name of the Commence category, as outputted by the IDF designer
+	Const FRM_ID = "Name" 'Attribute name of the Commence Detail Form Name, as outputted by the IDF designer
+	Dim FSO, fld, f, fc
+	Dim sFolder
+	Dim dicFormFiles
+	Dim i
+	Dim oDom
+
+	i = 0
+	sFolder = Application.Database.Path & "\tmplts" 'path where form files reside
+
+	Set oDOM = CreateObject("Microsoft.XMLDOM") 'beware that XMLDOM uses A LOT of memory!
+	oDOM.async = false 'do not do -uhm- things asynchronously
+	Set FSO = CreateObject("Scripting.FileSystemObject")
+	Set dicFormFiles = CreateObject("Scripting.Dictionary") 
+	Set fld = FSO.GetFolder(sFolder) 'get folder
+	Set fc = fld.Files 'get files collection
+	'loop thru all files in and populate dicFormFiles with file names
+	For Each f In fc
+		'find all files with .XML extension
+		If LCase(Right(f.Name, 4)) = EXT Then
+			dicFormFiles.Add i, f.Name 'add file name to collection
+			i = i + 1
+		End If
+	Next 'f
+
+	'redefine arrXMLFormFiles
+	ReDim arrXMLFormFiles(dicFormFiles.Count - 1, 2) 'set size and dimensions
+	'arrXMLFormFiles(x,0) holds Category name
+	'arrXMLFormFiles(x,1) holds Form name
+	'arrXMLFormFiles(x,2) holds Form File name (.xml)
+
+	'recursively open all the XML files and analyse them
+	'use MS XML stuff, as an alternative to Regular Expressions that I can't get to work the way I want to
+	For i = 0 To dicFormFiles.Count - 1
+		'load XML file
+		If Not oDOM.load(sFolder & "\" & dicFormFiles(i)) Then
+			MsgBox "An error occurred while loading the Detail Form XML file: " & dicFormFiles(i), vbExclamation, boxtitle
+		Else 'success!
+			Dim oNode : Set oNode = oDOM.selectSingleNode("FORM") 'FORM is the node we want
+			arrXMLFormFiles(i, 0) = oNode.getAttribute(CAT_ID)
+			arrXMLFormFiles(i, 1) = oNode.getAttribute(FRM_ID)
+			arrXMLFormFiles(i, 2) = dicFormFiles(i)
+			Set oNode = Nothing
+		End If
+
+	Next 'i
+
+	bFormDataLoaded = True 'set script-global variable
+
+	'release objects
+	Set oDom = Nothing
+	Set dicFormFiles = Nothing
+	Set fld = Nothing
+	Set fc = Nothing
+	Set FSO = Nothing
+
+End Sub
+
+Sub InitializeFormData
+	'set up the form
+	bFormDataLoaded = False 'explicitly set default value
+	'create a reference to the ListViewContents class that will hold what type of data a listview is showing
+	Set oListView1Content = New ListViewContents
+
+	'get default values
+	Call GetCategories
+	Call PopulateListViewWithDatabaseDetails
+	Call PopulateTreeView
+
+	'set statusbar
+	ReDim arrPnlText(0)
+	arrPnlText(0) = oCmc.Path
+	Call AddStatusBarPanel(1, arrPnlText)
+
+End Sub
+
+Function dq(ByVal s)
+	dq = Chr(34) & s & Chr(34)
+End Function
+
+Function QualifyPath(ByVal s)
+	'make sure string ends with \
+	QualifyPath = s
+	If Right(s, 1) <> "\" Then 
+		QualifyPath = s & "\"
+	End If
+End Function
+
+Function WMIDateStringToDate(dtmInstallDate)
+    WMIDateStringToDate = CDate(Mid(dtmInstallDate, 5, 2) & "/" & _
+        Mid(dtmInstallDate, 7, 2) & "/" & Left(dtmInstallDate, 4) _
+            & " " & Mid (dtmInstallDate, 9, 2) & ":" & _
+                Mid(dtmInstallDate, 11, 2) & ":" & Mid(dtmInstallDate, _
+                    13, 2))
+End Function
+
+Function FieldTypeToString(ByVal lType)
+
+	Select Case lType
+
+		Case 0 'string
+			FieldTypeToString = "Text"
+		Case 1 'number
+			FieldTypeToString = "Number"
+		Case 2 'date
+			FieldTypeToString = "Date"
+		Case 3 'telephone
+			FieldTypeToString = "Telephone"
+		Case 7 'Check Box
+			FieldTypeToString = "Checkbox"
+		Case 11 'name
+			FieldTypeToString = "Name"
+		Case 12 'Data file
+			FieldTypeToString = "Data"
+		Case 13 'Image
+			FieldTypeToString = "Image"
+		Case 14 'Time
+			FieldTypeToString = "Time"
+		Case 15 'Excel cell
+			FieldTypeToString = "Excel"
+		Case 20 ' Calculation
+			FieldTypeToString = "Calculation"
+		Case 21 'Sequence number
+			FieldTypeToString = "Sequence"
+		Case 22 'Selection
+			FieldTypeToString = "Selection"
+		Case 23 'E-mail
+			FieldTypeToString = "E-mail"
+		Case 24 'Internet address
+			FieldTypeToString = "Internet Address"
+		Case Else
+			FieldTypeToString = "Unknown"
+
+	End Select
+
+End Function
+
+Function UnBracket(ByVal s)
+	'removes first and last character from string. Not very elegant. Strange function name too.
+	Dim tmp
+
+	tmp = s
+	tmp = Left(tmp , Len(tmp) -1)
+	tmp = Right(tmp , Len(tmp) -1)
+	UnBracket = tmp
+
+End Function
+
+Sub ShowView(ByVal sView)
+	'throw DDE command at Commence to make it show view sView
+	Dim strDDE
+
+	strDDE = "[ShowView(" & dq(sView) & ")]"
+    Call DDEExecute(strDDE)
+End Sub
+
+Function GetFormFileName(ByVal sCatName, ByVal sFormName)
+	'returns form file name from arrXMLFormFiles
+	Dim i, j
+	GetFormFileName = "Not found" 'default value
+	For i = 0 To UBound(arrXMLFormFiles)
+		If arrXMLFormFiles(i,0) = sCatName Then
+			If arrXMLFormFiles(i, 1) = sFormName Then
+				GetFormFileName = arrXMLFormFiles(i, 2)
+			End If
+		End If
+	Next 'i
+
+End Function 
+
+Sub ToggleFormDataLayout()
+	'set form to show data
+	'could do with a makeover
+
+	Form.RunTime.GetControl("ListView1").Height = 5265
+	Form.RunTime.GetControl("CommandButton2").Visible = True
+	Form.RunTime.GetControl("CommandButton3").Visible = True
+	Form.RunTime.GetControl("CheckBox1").Visible = True
+
+End Sub
+
+Sub ToggleDefaultLayout()
+	'set form to show default layout
+	'could do with a makeover
+	Form.RunTime.GetControl("ListView1").Height = 5700
+	Form.RunTime.GetControl("CommandButton2").Visible = False
+	Form.RunTime.GetControl("CommandButton3").Visible = False
+	Form.RunTime.GetControl("CheckBox1").Visible = False
+
+End Sub
+
+Function ToggleSortOrder(ByVal i)
+	If i = lvwAscending Then
+		ToggleSortOrder = lvwDescending
+	Else
+		ToggleSortOrder = lvwAscending
+	End If
+End Function
+
+Sub ShowFormScript(ByVal sCat, ByVal sForm)
+	'shows the form script in a text box
+	Const TemporaryFolder = 2
+	Dim strDDE
+	Dim FSO, wsh
+	Dim f, ts, tfolder, tname, tfullname
+	Dim buffer
+	Dim ShowInline
+
+	If sCat = "" Then MsgBox "No Category Info" : Exit Sub 
+	ShowInline = CBool(Form.RunTime.GetControl("CheckBox1").Value)
+
+	'first we need to get the script.
+	Set FSO = CreateObject("Scripting.FileSystemObject")
+	Set tfolder = FSO.GetSpecialFolder(TemporaryFolder) 'get TEMP folder
+	tname = FSO.GetTempName 'get temp filename
+	'temp file names returns a system defined filename and extension; append it with a .txt extension
+	'that way it will be treated as a txt file no matter what GetTempFile returns
+	tname = tname & ".txt"
+	tfullname = tfolder.Path & "\" & tname 'full name and path
+	strDDE = "[CheckOutFormScript(" & dq(sCat) & "," & dq(sForm) & "," & dq(tfullname) & ")]"
+	DDEExecute(strDDE) 'store script in file
+	Set ts = FSO.OpenTextFile(tfullname, 1, -2) 'open file
+	Call PopulateTempFileList(tfullname) 'add temp file name to collection so we can delete them when we are done
+	buffer = ts.ReadAll 'read all text from file
+	ts.Close
+
+	If ShowInline Then
+		'check size of the file
+		Set f = FSO.GetFile(tfullname)
+		If f.Size > 64*2^10 Then
+			oTxt2.Text = "Item Detail Form script is too large to display, de-select the 'show inline' option to view it in a text editor"
+		Else
+			oTxt2.Text = buffer 'a textBox holds only 64K data, any extra is truncated
+		End If
+		Set f = Nothing
+		Call ToggleTextBox(1)
+	Else
+		'show file and leave it to the OS to decide what application to use
+		Set wsh = CreateObject("Wscript.Shell")
+		wsh.Run tfullname 'equivalent to Start | Run <filename>
+		Set wsh = Nothing
+	End If
+
+	Set tfolder = Nothing
+	Set ts = Nothing
+	Set FSO = Nothing
+
+End Sub
+
+Sub ShowFormXML(ByVal sCat, ByVal sXML)
+	'shows the form XML in a text box
+	Dim FSO, wsh, ts, f
+	Dim buffer
+	Dim bShowInline
+
+	If sCat = "" Then MsgBox "No Category Info" : Exit Sub 
+	bShowInline = CBool(Form.RunTime.GetControl("CheckBox1").Value)
+	Set FSO = CreateObject("Scripting.FileSystemObject")
+	Set f = FSO.GetFile(Application.Database.Path & "\tmplts\" & sXML)
+	Set ts = FSO.OpenTextFile(f.Path, 1, -2) 'open file
+	buffer = ts.ReadAll 'read all text from file
+	ts.Close
+	Set ts = Nothing
+
+	If bShowInline Then
+		'check size of the file, a textBox holds only 64K data, any extra is truncated
+		'so check for that first
+		If f.Size > 64*2^10 Then
+			oTxt2.Text = "Item Detail Form XML source is too large to display, de-select the 'show inline' option to view it in an XML editor"
+		Else
+			oTxt2.Text = buffer 'show it inline
+		End If
+		Call ToggleTextBox(1)
+	Else
+		Set wsh = CreateObject("Wscript.Shell")
+		wsh.Run f.Path
+		Set wsh = Nothing
+	End If
+
+	Set f = Nothing
+	Set FSO = Nothing
+
+End Sub
+
+
+Sub ToggleTextBox(ByVal iShow)
+	'0 = Hide TextBox
+
+	'resize RichEdit
+	oTxt2.Height = 5265
+
+	If iShow = 0 Then
+		oLvw.Visible = True
+		oTxt2.Visible = False
+		Form.RunTime.GetControl("CommandButton4").Visible = False
+	Else 
+		oLvw.Visible = False
+		oTxt2.Visible = True
+		Form.RunTime.GetControl("CommandButton4").Visible = True
+	End If
+
+End Sub
+
+Sub PopulateTempFileList(ByVal s)
+	'adds string s to dictionary object
+
+	dicTempFiles.Add dicTempFiles.Count, s
+
+End Sub
+
+Sub CleanUp
+	'clean out memory
+    On Error Resume Next
+	Set oListView1Content = Nothing 'potential memory leak here? The .Item property was set to an object...is that released too?
+	Set oQrs = Nothing
+	Set oCur = Nothing
+	Set oCmc = Nothing
+	Set oConv = Nothing
+	Set oTvw = Nothing
+	Set oLvw = Nothing
+	Set oSbr = Nothing
+	Set oTxt2 = Nothing
+	Set oReg = Nothing
+	Call KillTempFiles
+	Set dicTempFiles = Nothing
+
+End Sub
+
+Sub KillTempFiles
+	'tries to delete the temporary files we may create
+	Dim FSO, i
+
+	Set FSO = Createobject("Scripting.FileSystemObject")
+
+	On Error Resume Next 'ignore errors
+
+	For i = 0 To dicTempFiles.Count - 1
+		FSO.DeleteFile dicTempFiles.Item(i)
+	Next 'i
+
+	Set FSO = Nothing
+
+End Sub
+
+Function FormatSize(Size)
+	'returns size in bytes in human-readable format
+	Dim Suffix
+	Size = CDbl(Size) 'required for some reason; otherwise it's treated as string(?)
+	Suffix = " Bytes"
+	If Size >= (2^10) Then Suffix = " KB"
+	If Size >= (2^20) Then Suffix = " MB"
+	If Size >= (2^30) Then Suffix = " GB"
+	If Size >= (2^40) Then Suffix = " TB"
+
+	Select Case Suffix
+		Case " KB" Size = Round(Size / (2^10), 1)
+		Case " MB" Size = Round(Size / (2^20), 1)
+		Case " GB" Size = Round(Size / (2^30), 1)
+		Case " TB" Size = Round(Size / (2^40), 1)
+	End Select
+
+	FormatSize = Size & Suffix
+End Function
+
+Function FormatSizeToKB(ByVal dblFileSize)
+	'return number of bytes expressed in KB
+	Dim expr
+	expr = dblFileSize / 2^10
+	FormatSizeToKB = FormatNumber(expr, 2) & " KB"
+End Function
+
+Function GetFullKeyNameFromNode(ByRef o)
+	'Treeview is structured like the registry
+	'to obtain the full key name we only have to iterate the parents till we're at the root
+	Dim sTmp, oNode
+
+	Set oNode = o
+	sTmp = oNode.Text
+	Do Until oNode.Parent.Key = "HKCU" Or oNode.Parent.Key = "HKLM"
+	Set oNode = oNode.Parent
+	sTmp = oNode.Text & "\" & sTmp
+	Loop
+
+	If oNode.Parent.Key = "HKCU" Then
+		bRegHive = HKEY_CURRENT_USER
+	ElseIf oNode.Parent.Key = "HKLM" Then
+		bRegHive = HKEY_LOCAL_MACHINE
+	Else
+		bRegHive = "Unknown"
+	End If
+	GetFullKeyNameFromNode = QualifyPath(REG_KEY_COMMENCE) & sTmp
+
+End Function
+
+Function EnumRegKey(oReg, bRegHive, strRegHive, strKeyPath, oNode)
+' This function will traverse a registry path via recursive
+' calls. It will also iterate and parse registry keyNames
+' and keyValues
+'
+' Required inputs
+'
+' oReg : Type object, an object reference to
+' WMI:StdRegProv on the remote system
+'
+' strRegHive : Type String, the ROOT Registry
+' Hive to start from
+'
+' strKeyPath : Type String, the registry path
+' starting at the hive specified in strRegHive
+'
+' oNode : TreView node to append key to
+
+Dim ary
+Dim lrc
+Dim arrValueNames, arrValueTypes, arrSubKeys
+Dim o
+
+lRegCounter = lRegCounter + 1
+lrc = oReg.EnumKey(bRegHive, strKeyPath, arrSubKeys)
+
+If IsArray(arrSubKeys) And lrc = 0 Then  ' return value of 0 indicates success
+ For each ary in arrSubKeys
+  If ary <> "" Then     ' "Default" value is empty string, let's ignore
+	 Set o = oTvw.Nodes.Add( oNode, tvwChild, "reg" & lRegCounter, ary)
+   Call EnumRegKey(oReg, bRegHive, strRegHive, strKeyPath & "\" & ary, o)
+  End If
+ Next
+End If
+
+End Function
+
+' --- classes ---
+
+Class ListViewContents
+	'holds reference to a ListView item, and keeps track of what kind of data is shown in it
+	Dim oItem 'listview object to which this class instance refers to
+	Dim lType 'data type displayed in listview
+	'should be one of these: (how to enum properly in VBS?)
+	'unspecified			= 0 (default)
+	'view							= 1
+	'category					= 2
+	'item detail form = 4
+	'connection				= 8
+	'file information	= 16
+	'file info				= 32
+	'extend at will...
+
+	Private Sub Class_Initialize
+		Call Clear
+	End Sub
+
+	Private Sub Class_Terminate
+		'Me.Item = Nothing 'will this destroy the reference to the 'real' object? Answer: yes it does ByVal/ByRef don't make a difference
+	End Sub
+
+	Public Sub Clear
+		Me.ContentType = LV_SHOW_DEFAULT 'default value is 0: unspecified
+	End Sub
+
+	Public Property Get ContentType
+		ContentType = lType 'return ContentType
+	End Property
+
+	Public Property Let ContentType(Value)
+		lType = Value 'assigne a value for ContentType, should be one of the above Long values
+	End Property
+
+	Public Property Get Item 
+		Set Item = oItem 'return reference to this object
+	End Property
+
+	Public Property Let Item(Value)
+		'assign object to this instance, allowing multiple class instances to refer to different controls
+		Set oItem = Value
+	End Property
+
+End Class
+
+Class IniFile
+	'a fascinating bug in this routine is that it will choke if there is more than 1 empty line between sections
+	'UPDATE 27-12-09: fixed this by simply not reading empty lines. Slight performance penalty
+
+	Public Filename
+	Public Section
+	Public Key
+	
+	Private objFso
+	Private objIni
+	Private dicSections
+	Private dicKeys
+	Private objRegEx
+	Private objMatch
+	Private objMatches
+	Private strRegExp
+
+	Private Sub Class_Initialize
+	
+		Set objFso = CreateObject("Scripting.FileSystemObject")
+		Set dicSections = CreateObject("Scripting.Dictionary")
+		Set dicKeys = CreateObject("Scripting.Dictionary")
+	
+	End Sub
+
+
+	Private Sub Class_Terminate
+	
+		Set objFso = Nothing
+		Set dicSections = Nothing
+		Set dicKeys = Nothing
+	
+	End Sub
+
+
+	Private Sub SectionStartEnd(ByRef lngSectionStart, ByRef lngSectionEnd)
+	
+		Dim arrContent, i, s
+		
+		lngSectionStart = -2
+		lngSectionEnd = -1
+		arrContent = Split(Content, vbNewLine, -1, 1)
+		If (UBound(arrContent) > -1) Then
+			If (Section <> "") Then
+				For i = LBound(arrContent) To UBound(arrContent)
+					s = Trim(arrContent(i))
+					If (LCase(s) = "[" & LCase(Section) & "]") Then
+						lngSectionStart = i
+					ElseIf (Left(s, 1) = "[") AND _
+						(Right(s, 1) = "]") AND _
+						(lngSectionStart >= 0) Then
+						lngSectionEnd = i - 1
+						Exit For
+					End If
+				Next
+				If (lngSectionStart >= 0) AND (lngSectionEnd < 0) Then
+					lngSectionEnd = UBound(arrContent)
+				End If
+			Else
+				lngSectionStart = -1
+				lngSectionEnd = UBound(arrContent)
+			End If
+			If (lngSectionStart > -2) Then
+				If (arrContent(lngSectionEnd) = "") Then
+					lngSectionEnd = lngSectionEnd - 1
+				End If
+			End If
+		End If
+	
+	End Sub
+
+
+	Property Get Content
+	
+		Const FOR_READING = 1
+		Dim s
+		
+		Content = ""
+		If objFso.FileExists(FileName) Then
+			Set objIni = objFso.OpenTextFile(Filename, FOR_READING)
+			Do While objIni.AtEndOfStream <> True
+				s = objIni.ReadLine
+				If Not Len(s) = 0 Then 'skip any empty lines(!)
+					Content = Content & vbNewLine & s
+				End if
+			Loop
+			objIni.Close
+			Set objIni = Nothing
+		End If
+
+	End Property
+
+
+	Property Let Content(strContent)
+	
+		Const OVERWRITE = True
+		
+		Set objIni = objFso.CreateTextFile(Filename, OVERWRITE)
+		objIni.Write strContent
+		objIni.Close
+		Set objIni = Nothing
+	
+	End Property
+
+	Property Get Value
+	
+	Dim lngSectionStart, lngSectionEnd, lngIndex, arrContent
+	Dim strLine, i, s
+	
+	Value = ""
+	SectionStartEnd lngSectionStart, lngSectionEnd
+	If (lngSectionStart > -2) Then
+		arrContent = Split(Content, vbNewLine, -1, 1)
+		For lngIndex = lngSectionStart + 1 To lngSectionEnd
+			strLine = arrContent(lngIndex)
+			i = InStr(1, strLine, "=", 1)
+			If (i > 0) Then
+				s = Left(strLine, i - 1)
+				s = Trim(s)
+				If (LCase(s) = LCase(Key)) Then
+					Value = Mid(strLine, i + 1)
+					Value = Trim(Value)
+					Exit For
+				End If
+			End If
+		Next
+	End If
+	
+	End Property
+
+
+	Property Let Value(strValue)
+	
+	Dim lngSectionStart, lngSectionEnd, arrContent
+	Dim lngIndex, lngIndex2, strContent, blnKeyNotFound
+	Dim strLine, i, s
+	
+	SectionStartEnd lngSectionStart, lngSectionEnd
+	If (lngSectionStart < -1) AND (strValue <> "") Then
+		strContent = Content & vbNewLine _
+		& "[" & Section & "]" & vbNewLine _
+		& Key & "=" & strValue
+	Else
+		blnKeyNotFound = True
+		arrContent = Split(Content, vbNewLine, -1, 1)
+		For lngIndex = lngSectionStart + 1 To lngSectionEnd
+			strLine = arrContent(lngIndex)
+			i = InStr(1, strLine, "=", 1)
+			If (i > 0) Then
+				s = Left(strLine, i - 1)
+				s = Trim(s)
+				If (LCase(s) = LCase(Key)) Then
+					blnKeyNotFound = False
+					If (strValue <> "") Then
+						arrContent(lngIndex) = Key & "=" & strValue
+					Else
+						For lngIndex2 = lngIndex To UBound(arrContent) - 1
+							arrContent(lngIndex2) = arrContent(lngIndex2 + 1)
+						Next
+						Redim Preserve arrContent(UBound(arrContent) - 1)
+					End If
+					Exit For
+				End If
+			End If
+		Next
+		If blnKeyNotFound AND (strValue <> "") Then
+			Redim Preserve arrContent(UBound(arrContent) + 1)
+			For lngIndex = UBound(arrContent) To lngSectionEnd + 2 Step -1
+				arrContent(lngIndex) = arrContent(lngIndex - 1)
+			Next
+			arrContent(lngSectionEnd + 1) = Key & "=" & strValue
+		End If
+		strContent = arrContent(0)
+		For lngIndex = 1 To UBound(arrContent)
+			strContent = strContent & vbNewLine & arrContent(lngIndex)
+		Next
+	End If
+	Content = strContent
+	
+	End Property
+
+	Property Get Sections()
+		Set objRegEx = New RegExp
+		With objRegEx
+			.Global = True
+			.IgnoreCase = True
+			.Pattern = "\[.*\]"
+		End With
+		Set objMatches = objRegEx.Execute(Content)   ' Execute search.
+		For Each objMatch in objMatches      ' Iterate Matches collection.
+			dicSections.Add dicSections.Count, objMatch.Value
+		Next
+		
+		'return the dictionary object as property
+		Set Sections = dicSections
+		
+		Set objRegEx = Nothing
+		Set objMatch = Nothing
+		Set objMatches = Nothing
+	
+	End Property
+
+	Property Get Keys()
+		Dim lngSectionStart, lngSectionEnd, arrContent
+		Dim strLine, lngIndex
+		Dim sTmp, i, arrKeys
+		
+		SectionStartEnd lngSectionStart, lngSectionEnd
+		If (lngSectionStart > -2) Then
+			arrContent = Split(Content, vbNewLine, -1, 1) 'this is tricky if there are >1 vbNewLine in the ini file; UPDATE this was fixed by not reading empty lines
+			For lngIndex = lngSectionStart + 1 To lngSectionEnd
+				arrKeys = Split(arrContent(lngIndex),"=")
+				If Not arrKeys(0) = "" Then dicKeys.Add dicKeys.Count, arrKeys(0)
+			Next
+		End If
+		'return the dictionary object as property
+		Set Keys = dicKeys
+	End Property
+
+
+End Class
+
+' DDE helpers
+Function DDERequest(ByVal strRequest)
+    'performs a DDE Request
+    Set oConv = oCmc.GetConversation("Commence", "GetData")
+    DDERequest = oConv.Request(strRequest)
+    Set oConv = Nothing
+End Function
+
+Sub DDEExecute(ByVal strRequest)
+    'performs a DDE Execute
+    Set oConv = oCmc.GetConversation("Commence", "GetData")
+    oConv.Execute(strRequest)
+    Set oConv = Nothing
+End Sub
